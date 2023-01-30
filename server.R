@@ -8,17 +8,19 @@ exampleguide <- "CACTGGAATGACACACGCCC"
 shinyServer(
   
   function(input, output) {
-    
-    
+    ############################################################################
+    # READ INPUT
+    ############################################################################
     # reading in file
     input.seqReactive <- reactive({
       # if else things to handle example data loading
       if(input$example) {
         return(readsangerseq(examplefile))
-      } else if(!is.null(input$file)) {
-        return(readsangerseq(input$file$datapath))
+      } else if(!is.null(input$file) && !is.null(input$scramble)) {
+        return(c(readsangerseq(input$file$datapath), c(readsangerseq(input$scramble$datapath))))
       } else return(validate(
-        need(input$file, "Please upload your sanger sequence file")
+        need(input$file, "Please upload your sanger sequence file"),
+        need(input$scramble, "Please upload your scramble sanger sequence file")
       ))
       
       
@@ -27,7 +29,10 @@ shinyServer(
     # making basecalls
     
     input.basecallsReactive <- reactive({
-      makeBaseCalls(input.seqReactive())
+      makeBaseCalls(input.seqReactive()[[1]])
+    })
+    input.basecallsReactiveScramble <- reactive({
+        makeBaseCalls(input.seqReactive()[[2]])
     })
     
     # getting the guide sequence
@@ -51,6 +56,7 @@ shinyServer(
       
       return(guide)
     })
+    output$guideSeq <- reactive({input$guide})
     
     ## pvalue cutoff
     
@@ -62,10 +68,11 @@ shinyServer(
       input$pvalcutoff
     })
     
-    
-    
+    ############################################################################
+    # PREPROCESS SANGER INPUT
+    ############################################################################
     sangsReactive <- reactive({
-      input.seq <- input.seqReactive()
+      input.seq <- input.seqReactive()[1]
       input.basecalls <- input.basecallsReactive()
       input.peakampmatrix <- peakAmpMatrix(input.basecalls)
       
@@ -74,6 +81,17 @@ shinyServer(
       sangs <- CreateSangs(input.peakampmatrix, input.basecalls)
     
       return(sangs)
+    })
+    sangsReactiveScramble <- reactive({
+        input.seqScramble <- input.seqReactive()[2]
+        input.basecallsScramble <- input.basecallsReactiveScramble()
+        input.peakampmatrixScramble <- peakAmpMatrix(input.basecallsScramble)
+        
+        
+        ### creating a sanger sequencing data.frame
+        sangs <- CreateSangs(input.peakampmatrixScramble, input.basecallsScramble)
+        
+        return(sangs)
     })
 
     
@@ -96,6 +114,26 @@ shinyServer(
       }
       
 
+    })
+    sangs.filtReactiveScramble <- reactive({
+        sangs <- sangsReactiveScramble()
+        
+        if(is.na(input$trim3) & is.na(input$trim5)){
+            # Remove 5' poor sequencing due to poor primer binding
+            sangs.filt <- sangs %>% filter(index > 20)
+            # removing crappy end
+            peakTotAreaCutoff <- mean(sangs.filt$Tot.area)/10
+            sangs.filt %<>% filter(Tot.area > peakTotAreaCutoff)
+            return(sangs.filt)
+        }else{
+            validate(need(!is.na(input$trim3), label = "A value to trim the 3' end "))
+            validate(need(!is.na(input$trim5), label = "A value to trim the 5' end "))
+            
+            sangs.filt <- sangs[input$trim5:input$trim3, ]
+            return(sangs.filt)
+        }
+        
+        
     })
     
     
@@ -131,13 +169,32 @@ shinyServer(
       return(guide.coord)
       
     })
-    
-    
+    guide.coordReactiveScramble <- reactive({
+        # the guide coordinates are relative to the index of the sequence that came out of the 
+        # makeBaseCalls function
+        # the guide is matched to the sequence of the filtered sanger sequencing, so that it doesn't
+        # match to any of the low quality regions. 
+        
+        sangs.filt <- sangs.filtReactiveScramble()
+        
+        # getting the sequence to match to
+        filt.sequence <- sangs.filt$base.call %>% paste(collapse = "") %>% DNAString()
+        
+        # this function finds where the guide matches 
+        guide.match <- GetGuideMatch(guideReactive(), filt.sequence)
+        
+        # Finding the index values
+        guide.coord <- list(start = sangs.filt[guide.match$start, "index"],
+            end = sangs.filt[guide.match$end, "index"])
+        
+        
+        return(guide.coord)
+        
+    })
 
-
-  
-    #######################
-    ## Model fitting work
+    ############################################################################
+    # GET MODEL NULL DIST
+    ############################################################################
     
     
     nullparams.Reactive <- reactive({
@@ -145,6 +202,12 @@ shinyServer(
       guide.coord <- guide.coordReactive()
       # getting params for the different null models
       null.m.params <- GetNullDistModel(sangs.filt, guide.coord)
+    })
+    nullparams.ReactiveScramble <- reactive({
+        sangs.filt <- sangs.filtReactiveScramble()
+        guide.coord <- guide.coordReactiveScramble()
+        # getting params for the different null models
+        null.m.params <- GetNullDistModel(sangs.filt, guide.coord)
     })
     
     
@@ -164,9 +227,24 @@ shinyServer(
       
       return(editing.df)
     })
+    editing.ReactiveScramble <- reactive({
+        # grabbing the reactive stuff
+        sangs.filt <- sangs.filtReactiveScramble()
+        sangs <- sangsReactiveScramble()
+        guide.coord <- guide.coordReactiveScramble()
+        guide <- guideReactive()
+        null.m.params <- nullparams.ReactiveScramble()
+        
+        
+        editing.df <- CreateEditingDF(guide.coord, guide, sangs, null.m.params)
+        
+        return(editing.df)
+    })
     
     
-    ### Making QC plots
+    ############################################################################
+    # MAKE QC PLOTS
+    ############################################################################
     
     output$prefilter.totalarea <- renderPlot({
       guide.coord <- guide.coordReactive()
@@ -177,6 +255,16 @@ shinyServer(
         labs(x = "Base position",
              y = "Total peak area at base position (A + T + C + G)",
              title = "Unfiltered data, total peak area")
+    })
+    output$prefilter.totalareaScramble <- renderPlot({
+        guide.coord <- guide.coordReactiveScramble()
+        sangs <- sangsReactiveScramble()
+        ggplot(sangs, aes(x = index, y = Tot.area)) +
+            geom_rect(xmin = guide.coord$start, xmax = guide.coord$end, ymin = 0, ymax = Inf, fill = "lightgrey") +
+            geom_line() +
+            labs(x = "Base position",
+                y = "Total peak area at base position (A + T + C + G)",
+                title = "Unfiltered data, total peak area")
     })
     
     output$postfilter.signal.noise <- renderPlotly({
@@ -228,6 +316,55 @@ shinyServer(
       ggplotly(p)
       
     })
+    output$postfilter.signal.noiseScramble <- renderPlotly({
+        guide.coord <- guide.coordReactiveScramble()
+        sangs.filt <- sangs.filtReactiveScramble()
+        sangs <- sangsReactiveScramble()
+        
+        ## doing some data rearrangement for plotting
+        
+        catch <- sangs.filt %>% dplyr::select(A.area:T.area, A.perc:T.perc, base.call, index)
+        catch %<>% gather( key = base, value = value,
+            A.area:T.area, A.perc:T.perc) %>%
+            separate(col = base, into = c("base", "measure"))
+        
+        noise <- catch %>% 
+            group_by(index, measure) %>% 
+            filter(base != base.call) %>%
+            summarize(noise = sum(value))
+        signal <- catch %>%
+            group_by(index, measure) %>%
+            filter(base == base.call) %>% 
+            summarize(signal = sum(value))
+        
+        summary.df <- left_join(noise,signal) %>%
+            gather(key = type, value = value, noise, signal)
+        
+        sangs.plot <- sangs.filt %>% dplyr::select(index, base.call) 
+        sangs.plot %<>% left_join(summary.df)
+        
+        ## now acutally making the plot
+        
+        sangs.plot$type <- ordered(sangs.plot$type, levels = c("signal", "noise"))
+        
+        max.height <- filter(sangs.plot, measure == "area") %>% select(value) %>% max
+        
+        guide.region <- data.frame(index = c(guide.coord$start, guide.coord$end,
+            guide.coord$end, guide.coord$start), 
+            value = c(0, 0, max.height, max.height))
+        
+        p <- sangs.plot %>% filter(measure == "area") %>%
+            ggplot(aes(x = index, y = value)) +
+            geom_polygon(data = guide.region, fill = "lightgrey") +
+            geom_line(aes(color = type)) +
+            scale_color_manual(values = c("#5e3c99", "#e66101")) +  
+            labs(title = "Filtered data signal and noise total area",
+                x = "Position",
+                y = "Peak Area") + 
+            theme(legend.title = element_blank())
+        ggplotly(p)
+        
+    })
     
     output$postfilter.noise.perc <- renderPlot({
       guide.coord <- guide.coordReactive()
@@ -273,7 +410,50 @@ shinyServer(
              x = "Position",
              y = "Percent peak area noise")
     })
-    
+    output$postfilter.noise.percScramble <- renderPlot({
+        guide.coord <- guide.coordReactiveScramble()
+        sangs.filt <- sangs.filtReactiveScramble()
+        
+        guide.coord <- guide.coordReactiveScramble()
+        sangs.filt <- sangs.filtReactiveScramble()
+        
+        ## doing some data rearrangement for plotting
+        
+        catch <- sangs.filt %>% dplyr::select(A.area:T.area, A.perc:T.perc, base.call, index)
+        catch %<>% gather( key = base, value = value,
+            A.area:T.area, A.perc:T.perc) %>%
+            separate(col = base, into = c("base", "measure"))
+        
+        # splitting the catch dataframe into either signal and noise, and calculating the 
+        # total noise area or total noise percent
+        noise <- catch %>% 
+            group_by(index, measure) %>% 
+            filter(base != base.call) %>%
+            summarize(noise = sum(value))
+        signal <- catch %>%
+            group_by(index, measure) %>%
+            filter(base == base.call) %>% 
+            summarize(signal = sum(value))
+        
+        signal.noise.df <- left_join(noise,signal) %>%
+            gather(key = type, value = value, noise, signal)
+        
+        # making the plotting df
+        sangs.plot <- sangs.filt %>% dplyr::select(index, base.call) 
+        sangs.plot %<>% left_join(signal.noise.df)
+        sangs.plot$type <- ordered(sangs.plot$type, levels = c("signal", "noise"))
+        
+        sangs.plot %>% filter(measure == "perc", type == "noise") %>%
+            ggplot(aes(x = index, y = value)) +
+            geom_area(aes(fill = type)) +
+            scale_fill_manual(values = c("#e66101")) + 
+            annotate("rect", xmin=guide.coord$start, xmax=guide.coord$end,
+                ymin=0, ymax=Inf, alpha=1/5, fill="black") +
+            guides(fill = FALSE) + 
+            labs(title = "Percent peak area noise",
+                x = "Position",
+                y = "Percent peak area noise")
+    })
     
     output$chromatogram <- renderPlot({
       guide.coord <- guide.coordReactive()
@@ -283,7 +463,18 @@ shinyServer(
                    trim5 = (guide.coord$start-1), trim3 = length(input.basecalls@primarySeq) - guide.coord$end,
                    width = (guide.coord$end - guide.coord$start + 1))
     })
+    output$chromatogramScramble <- renderPlot({
+        guide.coord <- guide.coordReactiveScramble()
+        input.basecallsScramble <- input.basecallsReactiveScramble()
+        
+        chromatogram(obj = input.basecallsScramble, 
+            trim5 = (guide.coord$start-1), trim3 = length(input.basecallsScramble@primarySeq) - guide.coord$end,
+            width = (guide.coord$end - guide.coord$start + 1))
+    })
     
+    ############################################################################
+    # FIT MODEL
+    ############################################################################
     
     base.infoReactive <- reactive({
       # this reactive is collecting information on each base:
@@ -333,7 +524,54 @@ shinyServer(
       
       return(data.frame(avg.base, crit.perc.area = crit.vals, mu = mulvec, fillibens = filvec))
     })
-    
+    base.infoReactiveScramble <- reactive({
+        # this reactive is collecting information on each base:
+        # - average percent signal
+        # critical value for each base for the cutoff of significance
+        
+        sangs.filt <- sangs.filtReactiveScramble()
+        null.m.params <- nullparams.ReactiveScramble()
+        p.val.cutoff <- p.val.Reactive()
+        
+        # finding the average percent signal for each base
+        avg.base <- sangs.filt %>% gather(key = focal.base, value = value, 
+            A.area:T.area, A.perc:T.perc) %>%
+            separate(col = focal.base, into = c("focal.base", "measure")) %>% 
+            spread(key = measure, value = value) %>% 
+            filter(base.call == focal.base) %>% 
+            group_by(focal.base) %>% 
+            summarize(avg.percsignal = mean(perc),
+                avg.areasignal = mean(area))
+        
+        # getting the critical value for each base
+        crit.vals <- c(
+            a = qZAGA(p = p.val.cutoff, mu = null.m.params$a$mu,
+                sigma = null.m.params$a$sigma,
+                nu = null.m.params$a$nu,
+                lower.tail = FALSE),
+            c = qZAGA(p = p.val.cutoff, mu = null.m.params$c$mu,
+                sigma = null.m.params$c$sigma,
+                nu = null.m.params$c$nu,
+                lower.tail = FALSE),
+            g = qZAGA(p = p.val.cutoff, mu = null.m.params$g$mu,
+                sigma = null.m.params$g$sigma,
+                nu = null.m.params$g$nu,
+                lower.tail = FALSE),
+            t = qZAGA(p = p.val.cutoff, mu = null.m.params$t$mu,
+                sigma = null.m.params$t$sigma,
+                nu = null.m.params$t$nu,
+                lower.tail = FALSE)
+        )
+        # getting fillibens
+        fil <- lapply(null.m.params, FUN = function(x){x$fillibens})
+        filvec <- c(a = fil$a, c = fil$c, g = fil$g, t = fil$t)
+        
+        # getting mu -- a measure of dispersion
+        mul <- lapply(null.m.params, FUN = function(x){x$mu})
+        mulvec <- c(a = mul$a, c = mul$c, g = mul$g, t = mul$t)
+        
+        return(data.frame(avg.base, crit.perc.area = crit.vals, mu = mulvec, fillibens = filvec))
+    })
     
     output$baseinfo.table <- renderTable({
       base.info <- base.infoReactive()
@@ -346,8 +584,22 @@ shinyServer(
       
       return(temp)
     })
+    output$baseinfo.tableScramble <- renderTable({
+        base.info <- base.infoReactiveScramble()
+        
+        temp <- base.info
+        names(temp) <- c("Base", "Average percent signal",
+            "Average peak area",  "Critical percent value",
+            "model mu",  "Fillibens correlation")
+        row.names(temp) <- NULL
+        
+        return(temp)
+    })
     
-    ##############################################
+    ############################################################################
+    # MAKE PREDICTED EDITING PLOTS
+    ############################################################################
+    
     output$chromatogram_two <- renderPlot({
       guide.coord <- guide.coordReactive()
       input.basecalls <- input.basecallsReactive()
@@ -356,6 +608,15 @@ shinyServer(
                    showhets = FALSE,
                    trim5 = (guide.coord$start-1), trim3 = length(input.basecalls@primarySeq) - guide.coord$end,
                    width = (guide.coord$end - guide.coord$start + 1))
+    })
+    output$chromatogram_twoScramble <- renderPlot({
+        guide.coord <- guide.coordReactiveScramble()
+        input.basecallsScramble <- input.basecallsReactiveScramble()
+        chromatogram(obj = input.basecallsScramble,
+            showcalls = "none",
+            showhets = FALSE,
+            trim5 = (guide.coord$start-1), trim3 = length(input.basecallsScramble@primarySeq) - guide.coord$end,
+            width = (guide.coord$end - guide.coord$start + 1))
     })
     
     output$editing.table.plot <- renderPlot({
@@ -434,8 +695,86 @@ edit.spread %>%
         ) +
         coord_fixed(1)}
     })
+    output$editing.table.plotScramble <- renderPlot({
+        editing.df <- editing.ReactiveScramble()
+        sangs.filt <- sangs.filtReactiveScramble()
+        null.m.params <- nullparams.ReactiveScramble()
+        p.val.cutoff <- p.val.Reactive()
+        
+        #### Repeat code for getting avg.base from base.infoReactive
+        # finding the average percent signal for each base
+        avg.base <- sangs.filt %>% gather(key = focal.base, value = value, 
+            A.area:T.area, A.perc:T.perc) %>%
+            separate(col = focal.base, into = c("focal.base", "measure")) %>% 
+            spread(key = measure, value = value) %>% 
+            filter(base.call == focal.base) %>% 
+            group_by(focal.base) %>% 
+            summarize(avg.percsignal = mean(perc),
+                avg.areasignal = mean(area))
+        
+        # finding the model mu
+        mul <- lapply(null.m.params, FUN = function(x){x$mu})
+        mulvec <- c(a = mul$a, c = mul$c, g = mul$g, t = mul$t)
+        ####
+        
+        ### Reshape data
+        
+        edit.long <- editing.df %>% gather(key = focal.base, value = value, 
+            A.area:T.area, A.perc:T.perc, T.pval:A.pval) %>%
+            separate(col = focal.base, into = c("focal.base", "measure"))
+        
+        edit.spread <- edit.long %>% 
+            spread(key = measure, value = value) 
+        
+        color.cutoff = min(avg.base$avg.percsignal - mulvec)
+        edit.color <- edit.spread %>% 
+            mutate(adj.perc = {ifelse(perc >= color.cutoff,
+                100,
+                perc)
+            } %>% as.numeric) %>%
+            filter(pval < p.val.cutoff)
+        
+        
+        
+        #### make editing_table
+        if(any(edit.color$adj.perc != 100)){
+            edit.spread %>%
+                ggplot(aes(x = as.factor(index), y = focal.base)) + 
+                geom_tile(data = edit.color, aes(fill = adj.perc)) + 
+                geom_text(aes(label = round(perc, 0)), angle = 0, size = 5) +   
+                guides(fill = FALSE) + 
+                scale_fill_continuous(low = "#f7a8a8", high = "#9acdee") + 
+                scale_x_discrete(position = "top", labels = editing.df$guide.seq) + 
+                labs(x = NULL, y = NULL) + 
+                theme(axis.ticks = element_blank(),
+                    axis.text=element_text(size=16),
+                    plot.title = element_text(hjust = 0, size = 16),
+                    plot.margin=unit(c(0,0,0,2), "cm"), #c(top, bottom, left, right)
+                    panel.background = element_rect(fill = "transparent",colour = NA), # or theme_blank()
+                    plot.background = element_rect(fill = "transparent",colour = NA)
+                ) +
+                coord_fixed(1)} 
+        else
+        {edit.spread %>%
+                ggplot(aes(x = as.factor(index), y = focal.base)) + 
+                geom_tile(data = edit.color, fill = "#9acdee") + 
+                geom_text(aes(label = round(perc, 0)), angle = 0, size = 5) +   
+                guides(fill = FALSE) + 
+                scale_x_discrete(position = "top", labels = editing.df$guide.seq) + 
+                labs(x = NULL, y = NULL) + 
+                theme(axis.ticks = element_blank(),
+                    axis.text=element_text(size=16),
+                    plot.title = element_text(hjust = 0, size = 16),
+                    plot.margin=unit(c(0,0,0,2), "cm"), #c(top, bottom, left, right)
+                    panel.background = element_rect(fill = "transparent",colour = NA), # or theme_blank()
+                    plot.background = element_rect(fill = "transparent",colour = NA)
+                ) +
+                coord_fixed(1)}
+    })
     
-###########################################
+    ############################################################################
+    # MAKE QUAD PLOT
+    ############################################################################
     output$editing.quad.plot <- renderPlot({
       editing.df <- editing.Reactive()
       null.m.params <- nullparams.Reactive()
@@ -456,32 +795,78 @@ edit.spread %>%
       
       grid.arrange(p.a, p.c, p.g, p.t)
     })
-
-
-
-##########################33
-    output$editingtable <- renderTable(digits = -3, expr = { # maybe need to use renderMarkdown?
-      editing.df <- editing.Reactive()
-      p.val.cutoff <- p.val.Reactive()
-      
-      edit.long <- editing.df %>% gather(key = focal.base, value = value, 
-                                         A.area:T.area, A.perc:T.perc, T.pval:A.pval) %>%
-        separate(col = focal.base, into = c("focal.base", "measure"))
-      
-      edit.spread <- edit.long %>% spread(key = measure, value = value)
-    
-      
-      editingtable <- edit.spread %>% arrange(guide.position) %>% select(index,guide.position, guide.seq, base.call, focal.base, perc, pval) %>% 
-        mutate(index = as.character(index), 
-               guide.position = as.character(guide.position),
-               perc = format(perc, digits = 2),
-               signficant = ifelse(pval < p.val.cutoff, yes = "*", no = ""))
-      
-      names(editingtable) <-  c("Sanger position", "Guide position","Guide sequence", "Sanger base call",
-                         "Focal base", "Focal base peak area", "p value", "")
-      
-      return(editingtable)
+    output$editing.quad.plotScramble <- renderPlot({
+        editing.df <- editing.ReactiveScramble()
+        null.m.params <- nullparams.ReactiveScramble()
+        p.val.cutoff <- p.val.Reactive()
+        
+        edit.long <- editing.df %>% gather(key = focal.base, value = value, 
+            A.area:T.area, A.perc:T.perc, T.pval:A.pval) %>%
+            separate(col = focal.base, into = c("focal.base", "measure"))
+        
+        p.a <- makeEditingBarPlot(edit.long = edit.long, null.m.params = null.m.params$a,
+            base = "A", pval = p.val.cutoff, editing.df)
+        p.c <- makeEditingBarPlot(edit.long, null.m.params$c,
+            base = "C", pval = p.val.cutoff, editing.df)
+        p.g <- makeEditingBarPlot(edit.long, null.m.params$g,
+            base = "G", pval = p.val.cutoff, editing.df)
+        p.t <- makeEditingBarPlot(edit.long, null.m.params$t,
+            base = "T", pval = p.val.cutoff, editing.df)
+        
+        grid.arrange(p.a, p.c, p.g, p.t)
     })
+
+
+    ############################################################################
+    # MAKE TABLE OF EDITING RESULTS (REPORT)
+    ############################################################################
+    base.editingtabledata <- reactive({ # maybe need to use renderMarkdown?
+        editing.df <- editing.Reactive()
+        p.val.cutoff <- p.val.Reactive()
+        
+        edit.long <- editing.df %>% gather(key = focal.base, value = value, 
+            A.area:T.area, A.perc:T.perc, T.pval:A.pval) %>%
+            separate(col = focal.base, into = c("focal.base", "measure"))
+        
+        edit.spread <- edit.long %>% spread(key = measure, value = value)
+        
+        
+        editingtable <- edit.spread %>% arrange(guide.position) %>% select(index,guide.position, guide.seq, base.call, focal.base, perc, pval) %>% 
+            mutate(index = as.character(index), 
+                guide.position = as.character(guide.position),
+                perc = format(perc, digits = 2),
+                signficant = ifelse(pval < p.val.cutoff, yes = "*", no = ""))
+        
+        names(editingtable) <-  c("Sanger_position", "Guide_position","Guide_sequence", "Sanger_base_call",
+            "Focal_base", "Focal_base_peak_area", "p_value", "Significance")
+        
+        return(editingtable)
+    })
+    base.editingtabledataScramble <- reactive({ # maybe need to use renderMarkdown?
+        editing.df <- editing.ReactiveScramble()
+        p.val.cutoff <- p.val.Reactive()
+        
+        edit.long <- editing.df %>% gather(key = focal.base, value = value, 
+            A.area:T.area, A.perc:T.perc, T.pval:A.pval) %>%
+            separate(col = focal.base, into = c("focal.base", "measure"))
+        
+        edit.spread <- edit.long %>% spread(key = measure, value = value)
+        
+        
+        editingtable <- edit.spread %>% arrange(guide.position) %>% select(index,guide.position, guide.seq, base.call, focal.base, perc, pval) %>% 
+            mutate(index = as.character(index), 
+                guide.position = as.character(guide.position),
+                perc = format(perc, digits = 2),
+                signficant = ifelse(pval < p.val.cutoff, yes = "*", no = ""))
+        
+        names(editingtable) <-  c("Sanger_position", "Guide_position","Guide_sequence", "Sanger_base_call",
+            "Focal_base", "Focal_base_peak_area", "p_value", "Significance")
+        
+        return(editingtable)
+    })
+    
+    output$editingtable <- renderTable(digits = -3, expr = base.editingtabledata())
+    output$editingtableScramble <- renderTable(digits = -3, expr = base.editingtabledataScramble())
     
     output$modelfits <- renderTable({
       null.m.params <- nullparams.Reactive()
@@ -495,9 +880,23 @@ edit.spread %>%
     names(temp) <- c("Base", "Fillibens Correlation")
     return(temp)
     })
+    output$modelfitsScramble <- renderTable({
+        null.m.params <- nullparams.ReactiveScramble()
+        
+        temp <- data.frame(`Base` = c("A", "C", "G", "T"),
+            `Fillibens Correlation` = c(null.m.params$a$fillibens, 
+                null.m.params$g$fillibens, 
+                null.m.params$c$fillibens, 
+                null.m.params$t$fillibens))
+        
+        names(temp) <- c("Base", "Fillibens Correlation")
+        return(temp)
+    })
     
     
-#################################3
+    ############################################################################
+    # REPORT DOWNLOAD
+    ############################################################################
     
     output$downloadReport <- downloadHandler(
       # For PDF output, change this to "report.pdf"
@@ -531,6 +930,52 @@ edit.spread %>%
                           envir = new.env(parent = globalenv())
         )
       }
+    )
+    
+    base.preocessdData <- reactive({
+        data <- base.editingtabledata()
+        dataScramble <- base.editingtabledataScramble()
+        p.val.cutoff <- p.val.Reactive()
+        if(!input$guide.is.reverseComplement) {
+            filtered_data <- data %>% filter(Guide_sequence == "A") %>% filter(Focal_base == 'G') %>% select(
+                c("Guide_position", "Focal_base_peak_area"))
+            filtered_dataScramble <- dataScramble %>% filter(Guide_sequence == "A") %>% filter(
+                Focal_base == 'G') %>% select(c("Guide_position", "Focal_base_peak_area"))
+        } else {
+            filtered_data <- data %>% filter(Guide_sequence == "T") %>% filter(Focal_base == 'C') %>% select(
+                c("Guide_position", "Focal_base_peak_area"))
+            filtered_dataScramble <- dataScramble %>% filter(Guide_sequence == "T") %>% filter(
+                Focal_base == 'C') %>% select(c("Guide_position", "Focal_base_peak_area"))
+        }
+        colnames(filtered_dataScramble) <- c("Guide_position", "Focal_base_peak_area_scramble")
+        filtered_data <- filtered_data %>% full_join(filtered_dataScramble)
+        filtered_data$Difference <- as.double(filtered_data[["Focal_base_peak_area"]]) - as.double(
+            filtered_data[["Focal_base_peak_area_scramble"]])
+        filtered_data$Difference <- sapply(filtered_data$Difference, function(x) max(0, x))
+        if(!input$guide.is.reverseComplement) {
+            filtered_data$A <- nchar(input$guide)-as.integer(filtered_data$Guide_position)+1
+        } else {
+            filtered_data$A <- as.integer(filtered_data$Guide_position)
+        }
+        filtered_data$A <- sapply(filtered_data$A, function(x) paste0("A",x))
+        filtered_data <- filtered_data %>% select(c("A", "Focal_base_peak_area", "Focal_base_peak_area_scramble", "Difference"))
+        colnames(filtered_data) <- c("A#", "Guide", "Scramble", "Difference")
+        return(filtered_data)
+    })
+    
+    output$preocessdData.table <- renderTable({
+        temp <- base.preocessdData()
+        row.names(temp) <- NULL
+        return(temp)
+    })
+    
+    output$downloadData <-  downloadHandler(
+        # download data
+        filename = "data.csv",
+        content = function(file) {
+            # save data
+            write.csv(base.preocessdData(), file = file, quote = FALSE)
+        }
     )
 
 })

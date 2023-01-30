@@ -17,6 +17,8 @@ shinyUI(
                      p("Please upload your Sanger sequencing file here"),
                      fileInput(inputId = "file", 
                                label = 'Upload .ab1 File'),
+                     fileInput(inputId = 'scramble',
+                                label = 'Upload scramble .ab1 File'),
                      p("Please enter in your ~20bp guide sequence in 5'-3' orientation"),
                      textInput(inputId = 'guide',
                                label = 'Enter gRNA sequence'),
@@ -50,12 +52,16 @@ shinyUI(
                 tabPanel("Data QC",
                          h3("Total peak area before filtering"),
                          plotOutput(outputId = "prefilter.totalarea"),
+                         h4("Scramble:"),
+                         plotOutput(outputId = "prefilter.totalareaScramble"),
                          p("This plot shows the total peak area at each positon before QC filtering. 
                            The peak are for each base (ACGT) was summed to produce the total 
                            peak area. The shaded region denotes the guide RNA"),
                          
                          h3("Data QA: Signal and noise plot"),
                          plotlyOutput(outputId = "postfilter.signal.noise"),
+                         h4("Scramble:"),
+                         plotlyOutput(outputId = "postfilter.signal.noiseScramble"),
                          textOutput(outputId = "trimmedrange"),
                          br(),
                          p(strong("Signal and noise plot:"), " This plot shows the peak area of the filtered dataset. This can tell
@@ -72,10 +78,14 @@ shinyUI(
                          
                          h3("Data QA: Percent noise peak area"),
                          plotOutput(outputId = "postfilter.noise.perc"),
+                         h4("Scramble:"),
+                         plotOutput(outputId = "postfilter.noise.percScramble"),
                          p("This plot shows the amount of noise at a base position as the percent of the total peak area.
                             The shaded region is where the gRNA matches, which might have a peak due to base editing."),
                          h3("Guide RNA region Chromatogram"),
                          plotOutput(outputId = "chromatogram"),
+                         h4("Scramble:"),
+                         plotOutput(outputId = "chromatogramScramble"),
                          p("Chromatogram generated from the guide region. Shaded region shows where a double 
                            peak was detected during basecalling, although editing can still occur if a double 
                            peak was not detected.")
@@ -84,10 +94,17 @@ shinyUI(
                 #### Predicted editing tab
                 tabPanel("Predicted Editing",
                          h2("gRNA Protospacer"),
+                         h3("Guide:"),
+                         textOutput(outputId = "guideSeq"),
                          fluidRow(
                            verticalLayout(
                            plotOutput(outputId = "chromatogram_two"),
                            plotOutput(outputId = "editing.table.plot", width = "93.5%"))),
+                         h3("Scramble"),
+                         fluidRow(
+                            verticalLayout(
+                            plotOutput(outputId = "chromatogram_twoScramble"),
+                            plotOutput(outputId = "editing.table.plotScramble", width = "93.5%"))),
                           p("The top plot is the chromatogram of the protospacer. Highlighted peaks indicate double peaks were detected, however a peak may still be significant even if not highlighted. \nThe bottom plot shows the percent area of the signal for each base (ACGT) at each position along
                            the guide. Bases that are significantly different from the noise are colored in, color coded
                            relative to their percent area. Most positions of the guide only have one base colored in, as there
@@ -106,9 +123,13 @@ shinyUI(
                            distribution. Lower values of Filliben's correlation means less confidence in EditR for predicting editing,
                            your values should be above 0.90, if not, this means that your sequencing file likely has problems
                            with data quality."),
-                         tableOutput(outputId = "baseinfo.table"), 
+                         tableOutput(outputId = "baseinfo.table"),
+                         h3("Scramble:"),
+                         tableOutput(outputId = "baseinfo.tableScramble"),
                          h2("Quad plot"),
                          plotOutput(outputId = "editing.quad.plot"),
+                         h3("Scramble:"),
+                         plotOutput(outputId = "editing.quad.plotScramble"),
                          p("This plot shows the percent area of the background bases (the bases that 
                            were not the guide squence), the line denotes the crtical value cutoff based on the P-value
                            cutoff specified (default is 0.010.")
@@ -124,7 +145,11 @@ shinyUI(
                           and the base info table as well. Additionally, the editing table and the base information table are 
                           output in R syntax so you can copy them and bring them into your own R session.
 Please be patient, as the report may take some time to download as it needs to be compiled."),
-                         downloadButton('downloadReport')
+                         downloadButton('downloadReport'),
+                         h2("Base editing data"),
+                         tableOutput(outputId = "preocessdData.table"),
+                         p("Download base editing data"),
+                         downloadButton('downloadData')
                          )
                 
                 )
