@@ -105,6 +105,7 @@ shinyUI(
                             verticalLayout(
                             plotOutput(outputId = "chromatogram_twoScramble"),
                             plotOutput(outputId = "editing.table.plotScramble", width = "93.5%"))),
+                            downloadButton('downloadMulti'),
                           p("The top plot is the chromatogram of the protospacer. Highlighted peaks indicate double peaks were detected, however a peak may still be significant even if not highlighted. \nThe bottom plot shows the percent area of the signal for each base (ACGT) at each position along
                            the guide. Bases that are significantly different from the noise are colored in, color coded
                            relative to their percent area. Most positions of the guide only have one base colored in, as there

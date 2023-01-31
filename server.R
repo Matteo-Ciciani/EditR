@@ -609,6 +609,8 @@ shinyServer(
                    trim5 = (guide.coord$start-1), trim3 = length(input.basecalls@primarySeq) - guide.coord$end,
                    width = (guide.coord$end - guide.coord$start + 1))
     })
+    
+    
     output$chromatogram_twoScramble <- renderPlot({
         guide.coord <- guide.coordReactiveScramble()
         input.basecallsScramble <- input.basecallsReactiveScramble()
@@ -771,6 +773,197 @@ edit.spread %>%
                 ) +
                 coord_fixed(1)}
     })
+    
+    ############################################################################
+    # DOWNLOAD FULL PLOT
+    ############################################################################
+    
+    edit_plot <- reactive({
+        editing.df <- editing.Reactive()
+        sangs.filt <- sangs.filtReactive()
+        null.m.params <- nullparams.Reactive()
+        p.val.cutoff <- p.val.Reactive()
+        
+        #### Repeat code for getting avg.base from base.infoReactive
+        # finding the average percent signal for each base
+        avg.base <- sangs.filt %>% gather(key = focal.base, value = value, 
+            A.area:T.area, A.perc:T.perc) %>%
+            separate(col = focal.base, into = c("focal.base", "measure")) %>% 
+            spread(key = measure, value = value) %>% 
+            filter(base.call == focal.base) %>% 
+            group_by(focal.base) %>% 
+            summarize(avg.percsignal = mean(perc),
+                avg.areasignal = mean(area))
+        
+        # finding the model mu
+        mul <- lapply(null.m.params, FUN = function(x){x$mu})
+        mulvec <- c(a = mul$a, c = mul$c, g = mul$g, t = mul$t)
+        ####
+        
+        ### Reshape data
+        
+        edit.long <- editing.df %>% gather(key = focal.base, value = value, 
+            A.area:T.area, A.perc:T.perc, T.pval:A.pval) %>%
+            separate(col = focal.base, into = c("focal.base", "measure"))
+        
+        edit.spread <- edit.long %>% 
+            spread(key = measure, value = value) 
+        
+        color.cutoff = min(avg.base$avg.percsignal - mulvec)
+        edit.color <- edit.spread %>% 
+            mutate(adj.perc = {ifelse(perc >= color.cutoff,
+                100,
+                perc)
+            } %>% as.numeric) %>%
+            filter(pval < p.val.cutoff)
+        
+        
+        
+        #### make editing_table
+        if(any(edit.color$adj.perc != 100)){
+            edit.spread %>%
+                ggplot(aes(x = as.factor(index), y = focal.base)) + 
+                geom_tile(data = edit.color, aes(fill = adj.perc)) + 
+                geom_text(aes(label = round(perc, 0)), angle = 0, size = 5) +   
+                guides(fill = FALSE) + 
+                scale_fill_continuous(low = "#f7a8a8", high = "#9acdee") + 
+                scale_x_discrete(position = "top", labels = editing.df$guide.seq) + 
+                labs(x = NULL, y = NULL) + 
+                theme(axis.ticks = element_blank(),
+                    axis.text=element_text(size=16),
+                    plot.title = element_text(hjust = 0, size = 16),
+                    plot.margin=unit(c(0,0,0,2), "cm"), #c(top, bottom, left, right)
+                    panel.background = element_rect(fill = "transparent",colour = NA), # or theme_blank()
+                    plot.background = element_rect(fill = "transparent",colour = NA)
+                ) +
+                coord_fixed(1)} 
+        else
+        {edit.spread %>%
+                ggplot(aes(x = as.factor(index), y = focal.base)) + 
+                geom_tile(data = edit.color, fill = "#9acdee") + 
+                geom_text(aes(label = round(perc, 0)), angle = 0, size = 5) +   
+                guides(fill = FALSE) + 
+                scale_x_discrete(position = "top", labels = editing.df$guide.seq) + 
+                labs(x = NULL, y = NULL) + 
+                theme(axis.ticks = element_blank(),
+                    axis.text=element_text(size=16),
+                    plot.title = element_text(hjust = 0, size = 16),
+                    plot.margin=unit(c(0,0,0,2), "cm"), #c(top, bottom, left, right)
+                    panel.background = element_rect(fill = "transparent",colour = NA), # or theme_blank()
+                    plot.background = element_rect(fill = "transparent",colour = NA)
+                ) +
+                coord_fixed(1)}
+    })
+    edit_scramble <- reactive({
+        editing.df <- editing.ReactiveScramble()
+        sangs.filt <- sangs.filtReactiveScramble()
+        null.m.params <- nullparams.ReactiveScramble()
+        p.val.cutoff <- p.val.Reactive()
+        
+        #### Repeat code for getting avg.base from base.infoReactive
+        # finding the average percent signal for each base
+        avg.base <- sangs.filt %>% gather(key = focal.base, value = value, 
+            A.area:T.area, A.perc:T.perc) %>%
+            separate(col = focal.base, into = c("focal.base", "measure")) %>% 
+            spread(key = measure, value = value) %>% 
+            filter(base.call == focal.base) %>% 
+            group_by(focal.base) %>% 
+            summarize(avg.percsignal = mean(perc),
+                avg.areasignal = mean(area))
+        
+        # finding the model mu
+        mul <- lapply(null.m.params, FUN = function(x){x$mu})
+        mulvec <- c(a = mul$a, c = mul$c, g = mul$g, t = mul$t)
+        ####
+        
+        ### Reshape data
+        
+        edit.long <- editing.df %>% gather(key = focal.base, value = value, 
+            A.area:T.area, A.perc:T.perc, T.pval:A.pval) %>%
+            separate(col = focal.base, into = c("focal.base", "measure"))
+        
+        edit.spread <- edit.long %>% 
+            spread(key = measure, value = value) 
+        
+        color.cutoff = min(avg.base$avg.percsignal - mulvec)
+        edit.color <- edit.spread %>% 
+            mutate(adj.perc = {ifelse(perc >= color.cutoff,
+                100,
+                perc)
+            } %>% as.numeric) %>%
+            filter(pval < p.val.cutoff)
+        
+        
+        
+        #### make editing_table
+        if(any(edit.color$adj.perc != 100)){
+            edit.spread %>%
+                ggplot(aes(x = as.factor(index), y = focal.base)) + 
+                geom_tile(data = edit.color, aes(fill = adj.perc)) + 
+                geom_text(aes(label = round(perc, 0)), angle = 0, size = 5) +   
+                guides(fill = FALSE) + 
+                scale_fill_continuous(low = "#f7a8a8", high = "#9acdee") + 
+                scale_x_discrete(position = "top", labels = editing.df$guide.seq) + 
+                labs(x = NULL, y = NULL) + 
+                theme(axis.ticks = element_blank(),
+                    axis.text=element_text(size=16),
+                    plot.title = element_text(hjust = 0, size = 16),
+                    plot.margin=unit(c(0,0,0,2), "cm"), #c(top, bottom, left, right)
+                    panel.background = element_rect(fill = "transparent",colour = NA), # or theme_blank()
+                    plot.background = element_rect(fill = "transparent",colour = NA)
+                ) +
+                coord_fixed(1)} 
+        else
+        {edit.spread %>%
+                ggplot(aes(x = as.factor(index), y = focal.base)) + 
+                geom_tile(data = edit.color, fill = "#9acdee") + 
+                geom_text(aes(label = round(perc, 0)), angle = 0, size = 5) +   
+                guides(fill = FALSE) + 
+                scale_x_discrete(position = "top", labels = editing.df$guide.seq) + 
+                labs(x = NULL, y = NULL) + 
+                theme(axis.ticks = element_blank(),
+                    axis.text=element_text(size=16),
+                    plot.title = element_text(hjust = 0, size = 16),
+                    plot.margin=unit(c(0,0,0,2), "cm"), #c(top, bottom, left, right)
+                    panel.background = element_rect(fill = "transparent",colour = NA), # or theme_blank()
+                    plot.background = element_rect(fill = "transparent",colour = NA)
+                ) +
+                coord_fixed(1)}
+    })
+    
+    output$downloadMulti <-  downloadHandler(
+        # download data
+        filename = "editing_plot.pdf",
+        content = function(file) {
+            guide.coord <- guide.coordReactive()
+            input.basecalls <- input.basecallsReactive()
+            temp_chrom <- file.path(tempdir(), "chrom.pdf")
+            chromatogram(obj = input.basecalls,
+                showcalls = "none",
+                showhets = FALSE,
+                trim5 = (guide.coord$start-1), trim3 = length(input.basecalls@primarySeq) - guide.coord$end,
+                width = (guide.coord$end - guide.coord$start + 1), filename=temp_chrom)
+            
+            guide.coord <- guide.coordReactiveScramble()
+            input.basecallsScramble <- input.basecallsReactiveScramble()
+            temp_chromScramble  <- file.path(tempdir(), "chromScramble.pdf")
+            chromatogram(obj = input.basecallsScramble,
+                showcalls = "none",
+                showhets = FALSE,
+                trim5 = (guide.coord$start-1), trim3 = length(input.basecallsScramble@primarySeq) - guide.coord$end,
+                width = (guide.coord$end - guide.coord$start + 1), filename=temp_chromScramble)
+            
+            p1 <- ggdraw() + draw_image(magick::image_read_pdf(temp_chrom, density = 300),hjust =0.01)
+            p2 <- edit_plot()
+            p3 <- ggdraw() + draw_image(magick::image_read_pdf(temp_chromScramble, density = 300),hjust=0.01)
+            p4 <- edit_scramble()
+            p5 <- plot_grid(p1,p2,p3,p4,ncol=1,axis="l", align="v", scale=c(1.15,1,1.15,1), labels=c(paste0("Guide: ", input$guide),
+                "E", "Scramble:", "F"), label_x=c(-0.2,-1,0,-1))
+            pdf(file)
+            print(p5)
+            dev.off()
+        }
+    )
     
     ############################################################################
     # MAKE QUAD PLOT
@@ -960,7 +1153,12 @@ edit.spread %>%
         filtered_data$A <- sapply(filtered_data$A, function(x) paste0("A",x))
         filtered_data <- filtered_data %>% select(c("A", "Focal_base_peak_area", "Focal_base_peak_area_scramble", "Difference"))
         colnames(filtered_data) <- c("A#", "Guide", "Scramble", "Difference")
-        return(filtered_data)
+        if(!input$guide.is.reverseComplement) {
+            rev_data_frame <- apply(filtered_data, 2, rev)
+            return(tibble(as.data.frame(rev_data_frame)))
+        } else {
+            return(filtered_data)
+        }
     })
     
     output$preocessdData.table <- renderTable({
