@@ -1,10 +1,3 @@
-### having example data
-
-# the example file was orginally sequenced from Moriarity Lab work,
-  # original file was 3a_PVT1For
-examplefile <- "example.ab1"
-exampleguide <- "CACTGGAATGACACACGCCC"
-
 shinyServer(
   
   function(input, output) {
@@ -14,9 +7,7 @@ shinyServer(
     # reading in file
     input.seqReactive <- reactive({
       # if else things to handle example data loading
-      if(input$example) {
-        return(readsangerseq(examplefile))
-      } else if(!is.null(input$file) && !is.null(input$scramble)) {
+      if(!is.null(input$file) && !is.null(input$scramble)) {
         return(c(readsangerseq(input$file$datapath), c(readsangerseq(input$scramble$datapath))))
       } else return(validate(
         need(input$file, "Please upload your sanger sequence file"),
@@ -953,12 +944,14 @@ edit.spread %>%
                 trim5 = (guide.coord$start-1), trim3 = length(input.basecallsScramble@primarySeq) - guide.coord$end,
                 width = (guide.coord$end - guide.coord$start + 1), filename=temp_chromScramble)
             
+            #file_label <- strsplit(input$file, .Platform$file.sep)[[1]]
+            #file_label <- file_label[length(file_label)]
             p1 <- ggdraw() + draw_image(magick::image_read_pdf(temp_chrom, density = 300),hjust =0.01)
             p2 <- edit_plot()
             p3 <- ggdraw() + draw_image(magick::image_read_pdf(temp_chromScramble, density = 300),hjust=0.01)
             p4 <- edit_scramble()
-            p5 <- plot_grid(p1,p2,p3,p4,ncol=1,axis="l", align="v", scale=c(1.15,1,1.15,1), labels=c(paste0("Guide: ", input$guide),
-                "E", "Scramble:", "F"), label_x=c(-0.2,-1,0,-1))
+            p5 <- plot_grid(p1,p2,p3,p4,ncol=1,axis="l", align="v", scale=c(1.15,1,1.15,1), labels=c(paste0(input$file$name, "\nguide: ", input$guide),
+                "E", "Scramble:", "F"), label_x=c(-0.1,-1,0,-1))
             pdf(file)
             print(p5)
             dev.off()
@@ -1129,30 +1122,43 @@ edit.spread %>%
         data <- base.editingtabledata()
         dataScramble <- base.editingtabledataScramble()
         p.val.cutoff <- p.val.Reactive()
-        if(!input$guide.is.reverseComplement) {
-            filtered_data <- data %>% filter(Guide_sequence == "A") %>% filter(Focal_base == 'G') %>% select(
-                c("Guide_position", "Focal_base_peak_area"))
-            filtered_dataScramble <- dataScramble %>% filter(Guide_sequence == "A") %>% filter(
-                Focal_base == 'G') %>% select(c("Guide_position", "Focal_base_peak_area"))
+        if (input$editorType=='ABE') {
+            edited_base <- 'A'
+            edited_base_rev <- 'G'
+            focal_base <- 'G'
+            focal_base_rev <- 'C'
         } else {
-            filtered_data <- data %>% filter(Guide_sequence == "T") %>% filter(Focal_base == 'C') %>% select(
+            edited_base <- 'C'
+            edited_base_rev <- 'G'
+            focal_base <- 'T'
+            focal_base_rev <- 'A'
+        }
+        if(!input$guide.is.reverseComplement) {
+            filtered_data <- data %>% filter(Guide_sequence == edited_base) %>% filter(Focal_base == focal_base) %>% select(
                 c("Guide_position", "Focal_base_peak_area"))
-            filtered_dataScramble <- dataScramble %>% filter(Guide_sequence == "T") %>% filter(
-                Focal_base == 'C') %>% select(c("Guide_position", "Focal_base_peak_area"))
+            filtered_dataScramble <- dataScramble %>% filter(Guide_sequence == edited_base) %>% filter(
+                Focal_base == focal_base) %>% select(c("Guide_position", "Focal_base_peak_area"))
+        } else {
+            filtered_data <- data %>% filter(Guide_sequence == edited_base_rev) %>% filter(Focal_base == focal_base_rev) %>% select(
+                c("Guide_position", "Focal_base_peak_area"))
+            filtered_dataScramble <- dataScramble %>% filter(Guide_sequence == edited_base_rev) %>% filter(
+                Focal_base == focal_base_rev) %>% select(c("Guide_position", "Focal_base_peak_area"))
         }
         colnames(filtered_dataScramble) <- c("Guide_position", "Focal_base_peak_area_scramble")
         filtered_data <- filtered_data %>% full_join(filtered_dataScramble)
         filtered_data$Difference <- as.double(filtered_data[["Focal_base_peak_area"]]) - as.double(
             filtered_data[["Focal_base_peak_area_scramble"]])
         filtered_data$Difference <- sapply(filtered_data$Difference, function(x) max(0, x))
-        if(!input$guide.is.reverseComplement) {
+        
+        if((!input$guide.is.reverseComplement & input$orientation==3) | (input$guide.is.reverseComplement & input$orientation==5)) {
             filtered_data$A <- nchar(input$guide)-as.integer(filtered_data$Guide_position)+1
         } else {
             filtered_data$A <- as.integer(filtered_data$Guide_position)
         }
-        filtered_data$A <- sapply(filtered_data$A, function(x) paste0("A",x))
-        filtered_data <- filtered_data %>% select(c("A", "Focal_base_peak_area", "Focal_base_peak_area_scramble", "Difference"))
-        colnames(filtered_data) <- c("A#", "Guide", "Scramble", "Difference")
+        
+        filtered_data$A <- sapply(filtered_data$A, function(x) paste0(edited_base,x))
+        filtered_data <- filtered_data %>% select(c(edited_base, "Focal_base_peak_area", "Focal_base_peak_area_scramble", "Difference"))
+        colnames(filtered_data) <- c(paste0(edited_base, '#'), "Guide", "Scramble", "Difference")
         if(!input$guide.is.reverseComplement) {
             rev_data_frame <- apply(filtered_data, 2, rev)
             return(tibble(as.data.frame(rev_data_frame)))
