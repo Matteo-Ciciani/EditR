@@ -28,22 +28,17 @@ shinyServer(
     
     # getting the guide sequence
     guideReactive <- reactive({
-      
-      
-      if(input$example) {
-        guide <- (DNAString(exampleguide))
-        }
-      else{ 
-        validate(
-          need(input$guide != "", "Please enter a guide RNA sequence")
-        )
-        
+
+    validate(
+      need(input$guide != "", "Please enter a guide RNA sequence")
+    )
+    
         guide <- (DNAString(input$guide))
         
         if(input$guide.is.reverseComplement){
           guide <- reverseComplement(guide)
         }
-      } 
+
       
       return(guide)
     })
@@ -1124,10 +1119,10 @@ edit.spread %>%
         p.val.cutoff <- p.val.Reactive()
         if (input$editorType=='ABE') {
             edited_base <- 'A'
-            edited_base_rev <- 'G'
+            edited_base_rev <- 'T'
             focal_base <- 'G'
             focal_base_rev <- 'C'
-        } else {
+        } else if  (input$editorType=='CBE') {
             edited_base <- 'C'
             edited_base_rev <- 'G'
             focal_base <- 'T'
@@ -1157,9 +1152,9 @@ edit.spread %>%
         }
         
         filtered_data$A <- sapply(filtered_data$A, function(x) paste0(edited_base,x))
-        filtered_data <- filtered_data %>% select(c(edited_base, "Focal_base_peak_area", "Focal_base_peak_area_scramble", "Difference"))
+        filtered_data <- filtered_data %>% select(c("A", "Focal_base_peak_area", "Focal_base_peak_area_scramble", "Difference"))
         colnames(filtered_data) <- c(paste0(edited_base, '#'), "Guide", "Scramble", "Difference")
-        if(!input$guide.is.reverseComplement) {
+        if((!input$guide.is.reverseComplement & input$orientation==3) | (input$guide.is.reverseComplement & input$orientation==5)) {
             rev_data_frame <- apply(filtered_data, 2, rev)
             return(tibble(as.data.frame(rev_data_frame)))
         } else {

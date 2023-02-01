@@ -12,7 +12,7 @@ shinyUI(
   sidebarPanel(
     tags$head( tags$link(rel="stylesheet", type="text/css", href="styleupdates.css")),
     tags$img(href = "https://www.cancer.umn.edu/bio/osteosarcoma-staff/branden-moriarity", src="https://image.ibb.co/bStZTb/editr_logo_v3.png", alt="EditR", width="90%", class="unframed", align="center"),
-    radioButtons('editorType', label= "Choose base editor:", choices=c('ABE', 'CBE'), inline=TRUE),
+    radioButtons('editorType', label= "Choose base editor:", choiceNames=c('ABE', 'CBE'), choiceValues=c('ABE', 'CBE'), inline=TRUE),
     p("Please upload your Sanger sequencing file here"),
     fileInput(inputId = "file", 
            label = 'Upload .ab1 File'),
