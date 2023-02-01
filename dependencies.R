@@ -13,7 +13,10 @@ install.packages("gridExtra")
 install.packages("rmarkdown") # 07.06.2022 if errors that there is no markdown package, try 'install.packages("markdown")'
 install.packages("plotly")
 install.packages("yaml")
-
+install.packages("markdown")
+install.packages("BiocManager")
+install.packages("magick")
+install.packages("pdftools")
 
 
 # Bioconductor packages
