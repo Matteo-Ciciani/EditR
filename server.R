@@ -1172,7 +1172,7 @@ edit.spread %>%
         filename = "data.csv",
         content = function(file) {
             # save data
-            write.table(base.preocessdData(), file = file, quote = FALSE, sep='\t')
+            write.table(base.preocessdData(), file = file, quote = FALSE, sep='\t', row.names = FALSE)
         }
     )
 
