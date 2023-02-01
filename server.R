@@ -919,7 +919,7 @@ edit.spread %>%
     
     output$downloadMulti <-  downloadHandler(
         # download data
-        filename = "editing_plot.pdf",
+        filename = paste0(strsplit(input$file$name, '\\.')[[1]][1], '.pdf'),
         content = function(file) {
             guide.coord <- guide.coordReactive()
             input.basecalls <- input.basecallsReactive()
@@ -1153,7 +1153,7 @@ edit.spread %>%
         
         filtered_data$A <- sapply(filtered_data$A, function(x) paste0(edited_base,x))
         filtered_data <- filtered_data %>% select(c("A", "Focal_base_peak_area", "Focal_base_peak_area_scramble", "Difference"))
-        colnames(filtered_data) <- c(paste0(edited_base, '#'), "Guide", "Scramble", "Difference")
+        colnames(filtered_data) <- c(paste0(edited_base, "# (from ", input$orientation, "')"), "Guide", "Scramble", "Difference")
         if((!input$guide.is.reverseComplement & input$orientation==3) | (input$guide.is.reverseComplement & input$orientation==5)) {
             rev_data_frame <- apply(filtered_data, 2, rev)
             return(tibble(as.data.frame(rev_data_frame)))
@@ -1170,7 +1170,7 @@ edit.spread %>%
     
     output$downloadData <-  downloadHandler(
         # download data
-        filename = "data.csv",
+        filename = paste0(strsplit(input$file$name, '\\.')[[1]][1], '.csv'),
         content = function(file) {
             # save data
             write.table(base.preocessdData(), file = file, quote = FALSE, sep='\t', row.names = FALSE)
