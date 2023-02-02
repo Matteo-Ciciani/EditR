@@ -1157,7 +1157,7 @@ edit.spread %>%
         if(((!input$guide.is.reverseComplement & input$orientation==3) | (input$guide.is.reverseComplement & input$orientation==5)) & dim(
             filtered_data)[1]>1) {
             rev_data_frame <- apply(filtered_data, 2, rev)
-            return(tibble(rev_data_frame))
+            return(tibble(as.data.frame(rev_data_frame)))
         } else {
             return(filtered_data)
         }
