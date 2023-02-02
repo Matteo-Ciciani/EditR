@@ -1154,9 +1154,10 @@ edit.spread %>%
         filtered_data$A <- sapply(filtered_data$A, function(x) paste0(edited_base,x))
         filtered_data <- filtered_data %>% select(c("A", "Focal_base_peak_area", "Focal_base_peak_area_scramble", "Difference"))
         colnames(filtered_data) <- c(paste0(edited_base, "# (from ", input$orientation, "')"), "Guide", "Scramble", "Difference")
-        if((!input$guide.is.reverseComplement & input$orientation==3) | (input$guide.is.reverseComplement & input$orientation==5)) {
+        if(((!input$guide.is.reverseComplement & input$orientation==3) | (input$guide.is.reverseComplement & input$orientation==5)) & dim(
+            filtered_data)[1]>1) {
             rev_data_frame <- apply(filtered_data, 2, rev)
-            return(tibble(as.data.frame(rev_data_frame)))
+            return(tibble(rev_data_frame))
         } else {
             return(filtered_data)
         }
