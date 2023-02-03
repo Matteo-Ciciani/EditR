@@ -54,6 +54,8 @@ shinyServer(
       input$pvalcutoff
     })
     
+    filename_out <- reactive(strsplit(input$file$name, '\\.')[[1]][1])
+    
     ############################################################################
     # PREPROCESS SANGER INPUT
     ############################################################################
@@ -919,7 +921,9 @@ edit.spread %>%
     
     output$downloadMulti <-  downloadHandler(
         # download data
-        filename = paste0(strsplit(input$file$name, '\\.')[[1]][1], '.pdf'),
+        filename = function() {
+            n <- filename_out()
+            return(paste0(n, '.csv'))},
         content = function(file) {
             guide.coord <- guide.coordReactive()
             input.basecalls <- input.basecallsReactive()
@@ -1171,7 +1175,9 @@ edit.spread %>%
     
     output$downloadData <-  downloadHandler(
         # download data
-        filename = paste0(strsplit(input$file$name, '\\.')[[1]][1], '.csv'),
+        filename = function() {
+            n <- filename_out()
+            return(paste0(n, '.csv'))},
         content = function(file) {
             # save data
             write.table(base.preocessdData(), file = file, quote = FALSE, sep='\t', row.names = FALSE)
