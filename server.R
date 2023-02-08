@@ -923,7 +923,7 @@ edit.spread %>%
         # download data
         filename = function() {
             n <- filename_out()
-            return(paste0(n, '.csv'))},
+            return(paste0(n, '.pdf'))},
         content = function(file) {
             guide.coord <- guide.coordReactive()
             input.basecalls <- input.basecallsReactive()
