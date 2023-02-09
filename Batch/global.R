@@ -16,6 +16,7 @@ library(gridExtra)
 library(rmarkdown)
 library(plotly)
 library(yaml)
+library(xlsx)
 
 
 ## Defining functions

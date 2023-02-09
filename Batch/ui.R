@@ -1,5 +1,5 @@
 # EditR UI
-editrversion <- "0.0.1" 
+editrversion <- "0.1.0" 
 
 shinyUI(
   
@@ -42,7 +42,9 @@ shinyUI(
           uiOutput("outputEditing")
       ),
       tabPanel("Download Data",
-          uiOutput("downloadData")
+          uiOutput("downloadData"),
+          h4('Download all data'),
+          downloadButton("downloadAllData")
       )
   )
 )))

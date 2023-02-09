@@ -17,6 +17,7 @@ install.packages("markdown")
 install.packages("BiocManager")
 install.packages("magick")
 install.packages("pdftools")
+install.packages("xlsx")
 
 
 # Bioconductor packages

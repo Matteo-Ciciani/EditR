@@ -193,7 +193,8 @@ shinyServer(
     base.editingtabledataScramble <- list()
     
     base.preocessdData <- list()
-
+    base.preocessdDataEnv <- list()
+    env <- environment()
 
     ############################################################################
     # MAKE OUTPUT
@@ -895,8 +896,8 @@ shinyServer(
                 p2 <- editPlot[[i]]()
                 p3 <- ggdraw() + draw_image(magick::image_read_pdf(temp_chromScramble, density = 300),hjust=0.01)
                 p4 <- editPlotScramble[[i]]()
-                p5 <- plot_grid(p1,p2,p3,p4,ncol=1,axis="l", align="v", scale=c(1.15,1,1.15,1), labels=c(paste0("Guide: ", input$guide),
-                    "E", "Scramble:", "F"), label_x=c(-0.2,-1,0,-1))
+                p5 <- plot_grid(p1,p2,p3,p4,ncol=1,axis="l", align="v", scale=c(1.15,1,1.15,1), labels=c(paste0(
+                    "Guide: ", input[[paste0('guide', i)]]), "E", "Scramble:", "F"), label_x=c(-0.2,-1,0,-1))
                 pdf(file)
                 print(p5)
                 dev.off()
@@ -1076,6 +1077,55 @@ shinyServer(
                 return(filtered_data)
             }
         })
+        env[['base.preocessdDataEnv']][[i]] <- reactive({
+            data <- base.editingtabledata[[i]]()
+            dataScramble <- base.editingtabledataScramble[[i]]()
+            rev.guide <- eval(parse(text=paste0('input$guide.rev', i)))
+            p.val.cutoff <- p.val.Reactive()
+            if (input$editorType=='ABE') {
+                edited_base <- 'A'
+                edited_base_rev <- 'T'
+                focal_base <- 'G'
+                focal_base_rev <- 'C'
+            } else if  (input$editorType=='CBE') {
+                edited_base <- 'C'
+                edited_base_rev <- 'G'
+                focal_base <- 'T'
+                focal_base_rev <- 'A'
+            }
+            if(!rev.guide) {
+                filtered_data <- data %>% filter(Guide_sequence == edited_base) %>% filter(Focal_base == focal_base) %>% select(
+                    c("Guide_position", "Focal_base_peak_area"))
+                filtered_dataScramble <- dataScramble %>% filter(Guide_sequence == edited_base) %>% filter(
+                    Focal_base == focal_base) %>% select(c("Guide_position", "Focal_base_peak_area"))
+            } else {
+                filtered_data <- data %>% filter(Guide_sequence == edited_base_rev) %>% filter(Focal_base == focal_base_rev) %>% select(
+                    c("Guide_position", "Focal_base_peak_area"))
+                filtered_dataScramble <- dataScramble %>% filter(Guide_sequence == edited_base_rev) %>% filter(
+                    Focal_base == focal_base_rev) %>% select(c("Guide_position", "Focal_base_peak_area"))
+            }
+            colnames(filtered_dataScramble) <- c("Guide_position", "Focal_base_peak_area_scramble")
+            filtered_data <- filtered_data %>% full_join(filtered_dataScramble)
+            filtered_data$Difference <- as.double(filtered_data[["Focal_base_peak_area"]]) - as.double(
+                filtered_data[["Focal_base_peak_area_scramble"]])
+            filtered_data$Difference <- sapply(filtered_data$Difference, function(x) max(0, x))
+            
+            if((!rev.guide & input$orientation==3) | (rev.guide & input$orientation==5)) {
+                filtered_data$A <- nchar(eval(parse(text=paste0('input$guide', i))))-as.integer(filtered_data$Guide_position)+1
+            } else {
+                filtered_data$A <- as.integer(filtered_data$Guide_position)
+            }
+            
+            filtered_data$A <- sapply(filtered_data$A, function(x) paste0(edited_base,x))
+            filtered_data <- filtered_data %>% select(c("A", "Focal_base_peak_area", "Focal_base_peak_area_scramble", "Difference"))
+            colnames(filtered_data) <- c(paste0(edited_base, "# (from ", input$orientation, "')"), "Guide", "Scramble", "Difference")
+            if(((!rev.guide & input$orientation==3) | (rev.guide & input$orientation==5)) & dim(filtered_data)[1]>1) {
+                rev_data_frame <- apply(filtered_data, 2, rev)
+                return(tibble(as.data.frame(rev_data_frame)))
+            } else {
+                return(filtered_data)
+            }
+        })
         
         output[[paste0('preocessdData.table',i)]] <- renderTable({
             temp <- base.preocessdData[[i]]()
@@ -1100,6 +1150,20 @@ shinyServer(
         
     })
     
+    # make excle file with all data
+    output$downloadAllData <- downloadHandler(
+        # download data
+        filename = 'bacth_data.xlsx',
+        content = function(file) {
+            # save data
+            wb <- createWorkbook()
+            sheetnames <- filename_out()
+            data <- lapply(1:input$nfiles, function (i) base.preocessdDataEnv[[i]]())
+            sheets <- lapply(sheetnames, createSheet, wb = wb)
+            void <- Map(addDataFrame, data, sheets)
+            saveWorkbook(wb, file = file)
+        }
+    )
     })
     
     ############################################################################
@@ -1228,5 +1292,7 @@ shinyServer(
         })
         do.call(tagList, output_list)
     })
+    
+
     
     })
