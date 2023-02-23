@@ -113,7 +113,8 @@ shinyServer(
       
       # this function finds where the guide matches
       guides <- guideReactive()
-      guide.match <- mapply(GetGuideMatch, guides, filt.sequence, SIMPLIFY = FALSE)
+      guide.match <- mapply(function(x,y) tryCatch(GetGuideMatch(x,y), error = function(cond) {return(list('start'=1, 'end'=2))}), guides,
+          filt.sequence, SIMPLIFY = FALSE)
       
       # Finding the index values
       guide.coord <- mapply(function(x,y) list(start = x[y$start, "index"], end = x[y$end, "index"]), sangs.filt, guide.match, SIMPLIFY = FALSE)
@@ -168,7 +169,8 @@ shinyServer(
       guide <- guideReactive()
       null.m.params <- nullparams.Reactive()
       
-      editing.df <- mapply(CreateEditingDF, guide.coord, guide, sangs, null.m.params, SIMPLIFY = FALSE)
+      editing.df <- mapply(function(x,y,z,w) tryCatch(CreateEditingDF(x,y,z,w), error = function(cond) {return(DataFrame())}),
+          guide.coord, guide, sangs, null.m.params, SIMPLIFY = FALSE)
       return(editing.df)
     })
     editing.ReactiveScramble <- reactive({
@@ -1158,7 +1160,7 @@ shinyServer(
             # save data
             wb <- createWorkbook()
             sheetnames <- filename_out()
-            data <- lapply(1:input$nfiles, function (i) base.preocessdDataEnv[[i]]())
+            data <- lapply(1:input$nfiles, function (i) tryCatch(base.preocessdDataEnv[[i]](), error = function(cond) return(DataFrame())))
             sheets <- lapply(sheetnames, createSheet, wb = wb)
             void <- Map(addDataFrame, data, sheets)
             saveWorkbook(wb, file = file)
